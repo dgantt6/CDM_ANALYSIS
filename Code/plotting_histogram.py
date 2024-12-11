@@ -47,7 +47,7 @@ def overlay_satellite_data(ax):
     # Add a secondary y-axis for satellite counts
     satellite_ax = ax.twinx()
     # Axis title for Number of Space Objects (right axis)
-    satellite_ax.set_ylabel("Number of Space Objects", labelpad=10, fontsize=12)
+    satellite_ax.set_ylabel("Number of Space Objects", labelpad=12, fontsize=12)
     right_patch_blue = mpatches.Rectangle((1.06, 0.2), 0.019, 0.05, transform=ax.transAxes, color='blue',
                                     clip_on=False)
     ax.add_patch(right_patch_blue)
@@ -58,6 +58,7 @@ def overlay_satellite_data(ax):
     # Plot lines for satellites
     satellite_ax.step(bins[:-1], payload_counts, where='mid', label='Satellites', color='blue', linewidth=2)
     satellite_ax.step(bins[:-1], debris_counts, where='mid', label='Debris', color='green', linewidth=2)
+    satellite_ax.set_ylim(bottom=0)
 
     # Add legends
     ax.legend(loc='upper left')
