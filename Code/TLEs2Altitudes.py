@@ -1,4 +1,3 @@
-import numpy as np
 import ephem
 import datetime
 import csv

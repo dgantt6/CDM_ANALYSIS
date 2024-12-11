@@ -1,183 +1,137 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.patches as mpatches
+import matplotlib.colors as mcolors
 
-# Load CSV
-csv_file = "../Data/output.csv"
-data = pd.read_csv(csv_file)
+# Load primary CDM dataset
+cdm_file = "../Data/output.csv"
+data = pd.read_csv(cdm_file)
 
-# Convert SAT1_ALTITUDE_TCA and SAT2_ALTITUDE_TCA to numeric and to kilometers
+# Load satellite dataset
+satellite_file = "../Data/space_track_satellites_filtered.csv"
+satellite_data = pd.read_csv(satellite_file)
+satellite_data['ALTITUDE'] = pd.to_numeric(satellite_data['ALTITUDE'], errors='coerce')
+
+# Convert SAT1_ALTITUDE_TCA and SAT2_ALTITUDE_TCA to numeric and kilometers
 data['SAT1_ALTITUDE_TCA'] = pd.to_numeric(data['SAT1_ALTITUDE_TCA'], errors='coerce') / 1000  # Convert to km
 data['SAT2_ALTITUDE_TCA'] = pd.to_numeric(data['SAT2_ALTITUDE_TCA'], errors='coerce') / 1000  # Convert to km
 
 # Convert COLLISION_PROBABILITY to numeric
 data['COLLISION_PROBABILITY'] = pd.to_numeric(data['COLLISION_PROBABILITY'], errors='coerce')
 
-# Combine altitudes for histogram
-combined_altitudes = pd.concat([data['SAT1_ALTITUDE_TCA'], data['SAT2_ALTITUDE_TCA']])
-combined_altitudes = combined_altitudes.dropna()
+# Convert TCA column to datetime and extract year
+data['TCA'] = pd.to_datetime(data['TCA'], errors='coerce')
+data['Year'] = data['TCA'].dt.year
 
-# Set number of bins
-bin_width = 10 # Increase bin width to reduce empty bins
-bin_count = int((combined_altitudes.max() - combined_altitudes.min()) / bin_width)
+# Define histogram parameters
+bin_width = 10  # Width of each altitude bin in km
+bins = np.arange(data[['SAT1_ALTITUDE_TCA', 'SAT2_ALTITUDE_TCA']].min().min(),
+                 data[['SAT1_ALTITUDE_TCA', 'SAT2_ALTITUDE_TCA']].max().max() + bin_width, bin_width)
 
-# Define the study period
-start_year = 2020
-end_year = 2024
-study_months = (2024 - 2020 - 1) * 12 + 8
-study_years = study_months / 12
+# Define colormap for collision probability and miss distance
+collision_colors = LinearSegmentedColormap.from_list("collision_prob", ["mistyrose", "darkred"], N=256)
+miss_distance_colors = LinearSegmentedColormap.from_list("miss_distance", ["mistyrose", "darkred"], N=256)
 
-# Create histogram data
-plt.figure(figsize=(10, 6))
-counts, bins = np.histogram(combined_altitudes, bins=bin_count)
-normalized_counts = counts / study_years
-bars = plt.bar(bins[:-1], normalized_counts, width=np.diff(bins), color='blue', alpha=0.5, align='edge', label='Average CDMs per Year')
+# Function to overlay satellite data
+def overlay_satellite_data(ax):
+    payload_altitudes = satellite_data[satellite_data['OBJECT_TYPE'] == 'PAYLOAD']['ALTITUDE']
+    print(len(payload_altitudes))
+    debris_altitudes = satellite_data[satellite_data['OBJECT_TYPE'].isin(['DEBRIS', 'ROCKET BODY'])]['ALTITUDE']
+    print(len(debris_altitudes))
+    payload_counts, _ = np.histogram(payload_altitudes, bins=bins)
+    debris_counts, _ = np.histogram(debris_altitudes, bins=bins)
 
+    # Add a secondary y-axis for satellite counts
+    satellite_ax = ax.twinx()
+    # Axis title for Number of Space Objects (right axis)
+    satellite_ax.set_ylabel("Number of Space Objects", labelpad=10, fontsize=12)
+    right_patch_blue = mpatches.Rectangle((1.06, 0.2), 0.019, 0.05, transform=ax.transAxes, color='blue',
+                                    clip_on=False)
+    ax.add_patch(right_patch_blue)
+    right_patch_green = mpatches.Rectangle((1.06, 0.14), 0.019, 0.05, transform=ax.transAxes, color='green',
+                                    clip_on=False)
+    ax.add_patch(right_patch_green)
 
-# Calculate average collision probability for each bin
-avg_collision_probs = []
-for i in range(len(bins) - 1):
-    # Filter data for SAT1 and SAT2 altitudes within the current bin
-    sat1_bin_data = data[(data['SAT1_ALTITUDE_TCA'] >= bins[i]) & (data['SAT1_ALTITUDE_TCA'] < bins[i + 1])]
-    sat2_bin_data = data[(data['SAT2_ALTITUDE_TCA'] >= bins[i]) & (data['SAT2_ALTITUDE_TCA'] < bins[i + 1])]
-    bin_data = pd.concat([sat1_bin_data, sat2_bin_data], ignore_index=True)
+    # Plot lines for satellites
+    satellite_ax.step(bins[:-1], payload_counts, where='mid', label='Satellites', color='blue', linewidth=2)
+    satellite_ax.step(bins[:-1], debris_counts, where='mid', label='Debris', color='green', linewidth=2)
 
-    # Handle empty bins
-    if bin_data.empty:
-        avg_collision_prob = 0  # Assign zero if no data in the bin
-    else:
-        avg_collision_prob = bin_data['COLLISION_PROBABILITY'].mean()
+    # Add legends
+    ax.legend(loc='upper left')
+    satellite_ax.legend(loc='upper right')
 
-    avg_collision_probs.append(avg_collision_prob)
+# Function to plot yearly histograms for collision probability
+def plot_yearly_collision_probability(year):
+    filtered_data = data[data['Year'] == year]
+    combined_altitudes = pd.concat([filtered_data['SAT1_ALTITUDE_TCA'], filtered_data['SAT2_ALTITUDE_TCA']]).dropna()
+    yearly_counts, _ = np.histogram(combined_altitudes, bins=bins)
 
-# Find the maximum average collision probability for scaling the colorbar
-max_avg_prob = np.quantile(avg_collision_probs, 0.99)
-
-# Create colormap and apply colors to bars
-colors = LinearSegmentedColormap.from_list("collision_prob", ["mistyrose", "darkred"], N=256)
-for bar, avg_prob in zip(bars, avg_collision_probs):
-    bar.set_facecolor(colors(avg_prob / max_avg_prob if max_avg_prob > 0 else 0))
-
-# Plot Formatting
-plt.xlabel("Altitude (km)")
-plt.ylabel("Frequency of Payload Conjunction Warning (CDMs/year)")
-plt.title("CDM Warning Frequency at LEO Altitudes (Entire Study Period)")
-sm = plt.cm.ScalarMappable(cmap=colors, norm=plt.Normalize(vmin=0, vmax=max_avg_prob))
-sm.set_array([])  # Required for colorbar
-plt.xlim(200, 1800)
-plt.colorbar(sm, ax=plt.gca(), label="Average Collision Probability")
-bin_width_patch = mpatches.Patch(label='Bin Width: ' + str(bin_width) + ' km')
-plt.legend(handles=[bin_width_patch], handlelength=0, handletextpad=0)
-plt.savefig('../Plots/CDM_histogram_{bin_width}_Bid_Width.png', dpi=300, bbox_inches='tight')
-plt.show()# Create a Patch object for the bin width
-
-# Additional calculations for frequency of CDMs by miss distance
-def plot_miss_distance_histograms():
-    miss_distance_bins = {
-        '0-100 m': (0, 100),
-        '100-200 m': (100, 200),
-        '>300 m': (300, float('inf'))
-    }
-
-    for label, (lower, upper) in miss_distance_bins.items():
-        # Filter CDMs by miss distance
-        filtered_data = data[(data['MISS_DISTANCE'] >= lower) & (data['MISS_DISTANCE'] < upper)]
-
-        # Combine SAT1 and SAT2 altitudes
-        filtered_altitudes = pd.concat([filtered_data['SAT1_ALTITUDE_TCA'], filtered_data['SAT2_ALTITUDE_TCA']]).dropna()
-
-        # Calculate histogram
-        yearly_counts, _ = np.histogram(filtered_altitudes, bins=bins)
-
-        # Plot the histogram
-        plt.figure(figsize=(10, 6))
-        plt.bar(bins[:-1], yearly_counts, width=np.diff(bins), color='green', alpha=0.6, align='edge', label=label)
-        plt.xlabel("Altitude (km)")
-        plt.ylabel("Frequency of Conjunction Warnings (CDMs)")
-        plt.title(f"CDM Warning Frequency by Miss Distance ({label})")
-        plt.legend()
-        plt.xlim(200, 1800)
-        plt.savefig(f'../Plots/CDM_histogram_miss_distance_{label}_{bin_width}_Bid_Width.png', dpi=300, bbox_inches='tight')
-        plt.show()
-
-# Ensure 'Year' column is created
-if 'TCA' in data.columns:
-    data['TCA'] = pd.to_datetime(data['TCA'], errors='coerce')
-    data['Year'] = data['TCA'].dt.year
-else:
-    print("Error: 'TCA' column not found. Ensure the dataset has a valid 'TCA' column.")
-
-# Function to plot histograms by miss distance with updated labels
-def plot_miss_distance_histograms():
-    miss_distance_bins = {
-        '0-100 m': (0, 100),
-        '100-300 m': (100, 300),
-        '>300 m': (300, float('inf'))
-    }
-
-    for label, (lower, upper) in miss_distance_bins.items():
-        filtered_data = data[(data['MISS_DISTANCE'] >= lower) & (data['MISS_DISTANCE'] < upper)]
-        filtered_altitudes = pd.concat([filtered_data['SAT1_ALTITUDE_TCA'], filtered_data['SAT2_ALTITUDE_TCA']]).dropna()
-
-        yearly_counts, _ = np.histogram(filtered_altitudes, bins=bins)
-
-        plt.figure(figsize=(10, 6))
-        plt.bar(bins[:-1], yearly_counts, width=np.diff(bins), color='green', alpha=0.6, align='edge', label=f"{label}, Bin Width: {bin_width} km")
-        plt.xlabel("Altitude (km)")
-        plt.ylabel("Frequency of Conjunction Warnings (CDMs)")
-        plt.title(f"CDM Warning Frequency by Miss Distance ({label})")
-        plt.legend()
-        plt.xlim(200, 1800)
-        plt.savefig(f'../Plots/CDM_histogram_miss_distance_{label.replace(" ", "_")}_{bin_width}_Bid_Width.png', dpi=300, bbox_inches='tight')
-        plt.show()
-
-# Updated yearly histogram function with miss distance coloring and labels
-def plot_yearly_histogram_with_miss_distance(year_start, year_end):
-    if 'Year' not in data.columns:
-        print("Error: 'Year' column not found. Ensure the dataset has a valid 'Year' column.")
-        return
-
-    filtered_data = data[(data['Year'] >= year_start) & (data['Year'] <= year_end)]
-    filtered_altitudes = pd.concat([filtered_data['SAT1_ALTITUDE_TCA'], filtered_data['SAT2_ALTITUDE_TCA']]).dropna()
-    yearly_counts, _ = np.histogram(filtered_altitudes, bins=bins)
-
-    plt.figure(figsize=(10, 6))
-    bars = plt.bar(bins[:-1], yearly_counts, width=np.diff(bins), color='blue', alpha=0.5, align='edge')
-
-    avg_miss_distances = []
+    avg_collision_probs = []
     for i in range(len(bins) - 1):
-        sat1_bin_data = filtered_data[
-            (filtered_data['SAT1_ALTITUDE_TCA'] >= bins[i]) & (filtered_data['SAT1_ALTITUDE_TCA'] < bins[i + 1])]
-        sat2_bin_data = filtered_data[
-            (filtered_data['SAT2_ALTITUDE_TCA'] >= bins[i]) & (filtered_data['SAT2_ALTITUDE_TCA'] < bins[i + 1])]
-        bin_data = pd.concat([sat1_bin_data, sat2_bin_data], ignore_index=True)
+        bin_data = filtered_data[(filtered_data['SAT1_ALTITUDE_TCA'] >= bins[i]) & (filtered_data['SAT1_ALTITUDE_TCA'] < bins[i + 1]) |
+                                  (filtered_data['SAT2_ALTITUDE_TCA'] >= bins[i]) & (filtered_data['SAT2_ALTITUDE_TCA'] < bins[i + 1])]
+        avg_collision_probs.append(bin_data['COLLISION_PROBABILITY'].mean() if not bin_data.empty else 0)
 
-        avg_miss_distance = bin_data['MISS_DISTANCE'].mean() if not bin_data.empty else 0
-        avg_miss_distances.append(avg_miss_distance)
+    max_avg_prob = float(np.nanquantile(avg_collision_probs, 0.90))
 
-    max_avg_miss_distance = float(np.nanquantile(avg_miss_distances, 0.99))
-
-    for bar, avg_distance in zip(bars, avg_miss_distances):
-        bar.set_facecolor(colors(avg_distance / max_avg_miss_distance if max_avg_miss_distance > 0 else 0))
+    plt.figure(figsize=(12, 8))
+    bars = plt.bar(bins[:-1], yearly_counts, width=np.diff(bins), color='blue', alpha=0.5, align='edge')
+    for bar, avg_prob in zip(bars, avg_collision_probs):
+        bar.set_facecolor(collision_colors(avg_prob / max_avg_prob if max_avg_prob > 0 else 0))
 
     plt.xlabel("Altitude (km)")
-    plt.ylabel("Frequency of Conjunction Warnings (CDMs)")
-    plt.title(f"CDM Warning Frequency with Miss Distance ({year_start}-{year_end})")
-    sm = plt.cm.ScalarMappable(cmap=colors, norm=plt.Normalize(vmin=0, vmax=max_avg_miss_distance))
+    plt.ylabel('Number of CDMs')
+    sm = plt.cm.ScalarMappable(cmap=collision_colors, norm=plt.Normalize(vmin=0, vmax=max_avg_prob))
     sm.set_array([])
-    plt.colorbar(sm, ax=plt.gca(), label="Average Miss Distance (m)")
-    bin_width_ = mpatches.Patch(label='Bin Width: ' + str(bin_width) + ' km')
-    plt.legend(handles=[bin_width_], handlelength=0, handletextpad=0)
+    cbar = plt.colorbar(sm, ax=plt.gca(), label="Average Collision Probability in Altitude Shell", orientation='horizontal', pad=0.12, aspect = 50)
+    cbar.ax.xaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
+    cbar.ax.xaxis.get_major_formatter().set_scientific(True)
+    cbar.ax.xaxis.get_major_formatter().set_powerlimits((-1, 1))
     plt.xlim(200, 1800)
-    plt.savefig(f'../Plots/CDM_histogram_{year_start}_{year_end}_miss_distance_{bin_width}_Bid_Width.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'../Plots/CDM_collision_probability_{year}.png', dpi=300, bbox_inches='tight')
     plt.show()
 
-# Plot updated histograms
-plot_miss_distance_histograms()
-plot_yearly_histogram_with_miss_distance(2020, 2021)
-plot_yearly_histogram_with_miss_distance(2020, 2022)
-plot_yearly_histogram_with_miss_distance(2020, 2023)
-plot_yearly_histogram_with_miss_distance(2021, 2021)
-plot_yearly_histogram_with_miss_distance(2022, 2023)
+# Function to plot study period for collision probability
+def plot_study_period_collision_probability():
+    combined_altitudes = pd.concat([data['SAT1_ALTITUDE_TCA'], data['SAT2_ALTITUDE_TCA']]).dropna()
+    total_counts, _ = np.histogram(combined_altitudes, bins=bins)
+
+    avg_collision_probs = []
+    for i in range(len(bins) - 1):
+        bin_data = data[(data['SAT1_ALTITUDE_TCA'] >= bins[i]) & (data['SAT1_ALTITUDE_TCA'] < bins[i + 1]) |
+                        (data['SAT2_ALTITUDE_TCA'] >= bins[i]) & (data['SAT2_ALTITUDE_TCA'] < bins[i + 1])]
+        avg_collision_probs.append(bin_data['COLLISION_PROBABILITY'].mean() if not bin_data.empty else 0)
+
+    max_avg_prob = float(np.nanquantile(avg_collision_probs, 0.90))
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    bars = ax.bar(bins[:-1], total_counts, width=np.diff(bins), color='blue', alpha=0.5, align='edge')
+    for bar, avg_prob in zip(bars, avg_collision_probs):
+        bar.set_facecolor(collision_colors(avg_prob / max_avg_prob if max_avg_prob > 0 else 0))
+
+    ax.set_xlabel("Altitude (km)")
+    # Axis title for Number of CDMs (left axis)
+    midpoint_color = mcolors.to_rgba("mistyrose", alpha=0.5)[:3]  # Blend mistyrose and darkred
+    midpoint_color = tuple((a + b) / 2 for a, b in zip(midpoint_color, mcolors.to_rgba("darkred")[:3]))
+    plt.ylabel("Number of CDMs", labelpad=10, fontsize=12)
+    left_patch = mpatches.Rectangle((-0.075, 0.28), 0.019, 0.05, transform=ax.transAxes, color=midpoint_color,
+                                    clip_on=False)
+    ax.add_patch(left_patch)
+    sm = plt.cm.ScalarMappable(cmap=collision_colors, norm=plt.Normalize(vmin=0, vmax=max_avg_prob))
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=plt.gca(), label="Average Collision Probability in Altitude Shell", orientation='horizontal', pad=0.12, aspect=50)
+    cbar.ax.xaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
+    cbar.ax.xaxis.get_major_formatter().set_scientific(True)
+    cbar.ax.xaxis.get_major_formatter().set_powerlimits((-1, 1))
+    overlay_satellite_data(ax)
+    ax.set_xlim(200, 1800)
+    plt.savefig(f'../Plots/CDM_study_period_collision_probability.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+# Generate plots
+for year in [2021, 2022, 2023]:
+    plot_yearly_collision_probability(year)
+plot_study_period_collision_probability()

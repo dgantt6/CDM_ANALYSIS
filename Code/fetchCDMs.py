@@ -69,7 +69,7 @@ elif CDM_type == 'n':
     cdm_filename = input("Enter the full path to the downloaded private CSV file: ")
     satellite_ids = set()  # Use a set to ensure uniqueness
     all_rows = []
-    conjunction_data = {}  # Dictionary to store best CDM row for each conjunction pair
+    conjunction_data = {}
 
     try:
         with open(cdm_filename, mode='r', newline='', encoding='utf-8') as file:
@@ -88,14 +88,17 @@ elif CDM_type == 'n':
                 tca_date = parse_date(cdm.get('TCA'))
 
                 # Ensure valid data and relevant payload information
-                if (sat1_type == 'PAYLOAD' or sat2_type == 'PAYLOAD') and (sat1_type != 'UNKNOWN' and sat2_type != 'UNKNOWN') and collision_prob != 'NULL':
-                    conjunction_key = frozenset([sat_id_1, sat_id_2])  # Create a key for unique conjunctions
+                if (sat1_type == 'PAYLOAD' or sat2_type == 'PAYLOAD') and (
+                        sat1_type != 'UNKNOWN' and sat2_type != 'UNKNOWN') and collision_prob != 'NULL':
+                    # Create a key for unique conjunctions, considering same year, month, and day
+                    conjunction_key = (frozenset([sat_id_1, sat_id_2]), tca_date.date())
                     satellite_ids.update([sat_id_1, sat_id_2])  # Add IDs to the satellite set
 
                     # Determine if this CDM is closer to TCA than the current best for the conjunction
                     if conjunction_key not in conjunction_data or (
                             creation_date and tca_date and abs((tca_date - creation_date).total_seconds()) <
-                            abs((tca_date - parse_date(conjunction_data[conjunction_key]['CREATION_DATE'])).total_seconds())):
+                            abs((tca_date - parse_date(
+                                conjunction_data[conjunction_key]['CREATION_DATE'])).total_seconds())):
                         conjunction_data[conjunction_key] = cdm  # Update the best CDM for this conjunction
 
             # Save satellite IDs

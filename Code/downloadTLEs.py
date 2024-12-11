@@ -1,6 +1,6 @@
 import spacetrack.operators as op
 from spacetrack import SpaceTrackClient
-import datetime as d
+import datetime as dt
 from time import sleep
 import csv
 from pathlib import Path
@@ -83,4 +83,5 @@ while i < len(satcats):
         print('Lowkey Failed')
         os.remove('../Data/TLEs/'+str(satcats[i])+'.txt')
         sleep(15)
+
 
