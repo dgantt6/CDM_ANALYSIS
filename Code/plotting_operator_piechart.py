@@ -59,8 +59,8 @@ def group_countries_by_percentage(df, threshold, total_column='COUNT', percentag
         grouped = pd.concat([grouped, pd.DataFrame({'COUNTRY_FULL': ['Other'], total_column: [other_count]})])
     return grouped
 
-country_counts_cdm_grouped = group_countries_by_percentage(country_counts_cdm, 1)
-satellite_counts_grouped = group_countries_by_percentage(satellite_counts, 1)
+country_counts_cdm_grouped = group_countries_by_percentage(country_counts_cdm, 1.5)
+satellite_counts_grouped = group_countries_by_percentage(satellite_counts, 1.5)
 
 # Create a consistent color mapping
 unique_countries = set(country_counts_cdm_grouped['COUNTRY_FULL']).union(set(satellite_counts_grouped['COUNTRY_FULL']))
@@ -78,25 +78,27 @@ fig, axes = plt.subplots(1, 2, figsize=(14, 8))
 axes[0].pie(
     country_counts_cdm_grouped['COUNT'],
     labels=country_counts_cdm_grouped['COUNTRY_FULL'],
-    labeldistance=1.2,
+    labeldistance=1.4,
     autopct='%1.1f%%',
-    startangle=140,
+    startangle=-0,
     colors=[color_mapping[country] for country in country_counts_cdm_grouped['COUNTRY_FULL']],
-    pctdistance=1.1  # Adjust the distance of percentages from the center
+    pctdistance=1.18,  # Adjust the distance of percentages from the center
+    textprops = {'fontsize': 16}
 )
-axes[0].set_title("Unique CDMs by Operator \n (Sept. 2020 - Apr. 2024)")
+axes[0].set_title("Unique CDMs by Operator \n (Sept. 2020 - Apr. 2024)", fontsize = 20)
 
 # Satellite Pie Chart
 axes[1].pie(
     satellite_counts_grouped['COUNT'],
     labels=satellite_counts_grouped['COUNTRY_FULL'],
-    labeldistance = 1.2,
+    labeldistance = 1.3,
     autopct='%1.1f%%',
-    startangle=140,
+    startangle=0,
     colors=[color_mapping[country] for country in satellite_counts_grouped['COUNTRY_FULL']],
-    pctdistance= 1.1  # Adjust the distance of percentages from the center
+    pctdistance= 1.18,  # Adjust the distance of percentages from the center
+    textprops = {'fontsize': 16}
 )
-axes[1].set_title("Total Satellites in LEO by Operator \n (Apr 2024)")
+axes[1].set_title("Total Satellites in LEO by Operator \n (Apr 2024)", fontsize = 20)
 
 # Save and show
 plt.tight_layout()
@@ -104,6 +106,5 @@ plt.savefig("../Plots/combined_pie_chart.png")
 plt.show()
 
 # Export "Other" countries
-pd.DataFrame({'CDM_Other': country_counts_cdm[country_counts_cdm['PERCENTAGE'] < 1]['COUNTRY_FULL']}).to_csv("../Data/cdm_other_countries.csv", index=False)
-pd.DataFrame({'Satellite_Other': satellite_counts[satellite_counts['PERCENTAGE'] < 1]['COUNTRY_FULL']}).to_csv("../Data/satellite_other_countries.csv", index=False)
-
+pd.DataFrame({'CDM_Other': country_counts_cdm[country_counts_cdm['PERCENTAGE'] < 1.5]['COUNTRY_FULL']}).to_csv("../Data/cdm_other_countries.csv", index=False)
+pd.DataFrame({'Satellite_Other': satellite_counts[satellite_counts['PERCENTAGE'] < 1.5]['COUNTRY_FULL']}).to_csv("../Data/satellite_other_countries.csv", index=False)
